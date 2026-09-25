@@ -302,6 +302,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     const Camera& cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
 
+    if (iter == 1) {
+      cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
+    }
+
     // 2D block for generating ray from camera
     const dim3 blockSize2d(8, 8);
     const dim3 blocksPerGrid2d(

@@ -386,8 +386,12 @@ int main(int argc, char** argv)
     InitImguiData(guiData);
     InitDataContainer(guiData);
 
+    pathtraceInit(scene);
+
     // GLFW main loop
     mainLoop();
+
+    pathtraceFree();
 
     return 0;
 }
@@ -443,12 +447,6 @@ void runCuda()
 
     // Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
-
-    if (iteration == 0)
-    {
-        pathtraceFree();
-        pathtraceInit(scene);
-    }
 
     if (iteration < renderState->iterations)
     {
