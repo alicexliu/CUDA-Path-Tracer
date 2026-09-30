@@ -60,7 +60,7 @@ __host__ __device__ void scatterRay(
       pathSegment.color *= m.emittance * m.color;
     }
     else { 
-      // non-light material
+      // pure diffuse material
       pathSegment.remainingBounces -= 1;
       pathSegment.color *= m.color;
       pathSegment.ray.direction = calculateRandomDirectionInHemisphere(normal, rng);

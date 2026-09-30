@@ -6,6 +6,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
+#include <thrust/partition.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -16,6 +17,7 @@
 #include "interactions.h"
 
 #define ERRORCHECK 1
+#define STREAM_COMPACTION 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -82,6 +84,12 @@ static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
+
+struct is_ray_alive {
+  __host__ __device__ bool operator()(const PathSegment& p) {
+    return p.remainingBounces > 0;
+  }
+};
 
 void InitDataContainer(GuiDataContainer* imGuiData)
 {
@@ -407,7 +415,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         );
         checkCUDAError("trace one bounce");
         cudaDeviceSynchronize();
-        depth++;
+        depth++;;
 
         // TODO:
         // --- Shading Stage ---
@@ -426,8 +434,14 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_materials,
             depth
         );
+        cudaDeviceSynchronize();
 
-        if (depth >= traceDepth) {
+#if STREAM_COMPACTION
+        PathSegment* new_end = thrust::partition(thrust::device, dev_paths, dev_paths + num_paths, is_ray_alive());
+        num_paths = new_end - dev_paths;
+#endif
+
+        if (depth >= traceDepth || num_paths == 0) {
           iterationComplete = true;
         }
 
@@ -439,7 +453,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
     // Assemble this iteration and apply it to the image
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-    finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
+    finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, dev_image, dev_paths);
 
     ///////////////////////////////////////////////////////////////////////////
 
