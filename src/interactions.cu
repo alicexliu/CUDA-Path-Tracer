@@ -60,6 +60,9 @@ __host__ __device__ void scatterRay(
       pathSegment.color *= m.emittance * m.color;
     }
     else { 
+      if (m.hasReflective > 0.0f) {
+
+      } 
       // pure diffuse material
       pathSegment.remainingBounces -= 1;
       pathSegment.color *= m.color;

@@ -16,8 +16,9 @@
 #include "intersections.h"
 #include "interactions.h"
 
-#define ERRORCHECK 1
+#define ERRORCHECK 0
 #define STREAM_COMPACTION 1
+#define MATERIAL_SORTING 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -50,6 +51,7 @@ thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int de
     int h = utilhash((1 << 31) | (depth << 22) | iter) ^ utilhash(index);
     return thrust::default_random_engine(h);
 }
+
 
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, int iter, glm::vec3* image)
@@ -88,6 +90,12 @@ static ShadeableIntersection* dev_intersections = NULL;
 struct is_ray_alive {
   __host__ __device__ bool operator()(const PathSegment& p) {
     return p.remainingBounces > 0;
+  }
+};
+
+struct material_sort_comparator {
+  __host__ __device__ bool operator()(const ShadeableIntersection& a, const ShadeableIntersection& b) {
+    return a.materialId < b.materialId;
   }
 };
 
@@ -416,6 +424,11 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         checkCUDAError("trace one bounce");
         cudaDeviceSynchronize();
         depth++;;
+
+#if MATERIAL_SORTING
+        thrust::sort_by_key(thrust::device, dev_intersections, dev_intersections + num_paths,
+          dev_paths, material_sort_comparator());
+#endif
 
         // TODO:
         // --- Shading Stage ---
