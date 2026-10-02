@@ -61,37 +61,46 @@ __host__ __device__ void scatterRay(
     }
     else if (m.hasReflective > 0.0f) {
       pathSegment.remainingBounces -= 1;
-      pathSegment.color *= m.color;
       pathSegment.ray.origin = intersect + (normal * 0.0001f);
 
-      // perfectly specular
-      if (m.specular.exponent == -1.0f) {
-        pathSegment.ray.direction = glm::normalize(glm::reflect(pathSegment.ray.direction, normal));
+      thrust::uniform_real_distribution<float> u01(0, 1);
+      float randVal = u01(rng);
+
+      if (randVal < m.hasReflective) {
+        pathSegment.color *= (m.specular.color / m.hasReflective);
+
+        // perfectly specular
+        if (m.specular.exponent == -1.0f) {
+          pathSegment.ray.direction = glm::normalize(glm::reflect(pathSegment.ray.direction, normal));
+        }
+        else {
+          float xi1 = u01(rng);
+          float xi2 = u01(rng);
+
+          float cosTheta = pow(xi1, 1 / (m.specular.exponent + 1));
+          float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
+          float phi = 2 * PI * xi2;
+
+          float xs = cos(phi) * sinTheta;
+          float ys = sin(phi) * sinTheta;
+          float zs = cosTheta;
+
+          glm::vec3 perfectReflection = glm::normalize(glm::reflect(pathSegment.ray.direction, normal));
+
+          glm::vec3 up = glm::vec3(1.0f, 0.0f, 0.0f);
+          if (abs(perfectReflection.z) < 0.999f) {
+            up = glm::vec3(0.0f, 0.0f, 1.0f);
+          }
+
+          glm::vec3 tangent = glm::normalize(glm::cross(up, perfectReflection));
+          glm::vec3 bitangent = glm::cross(perfectReflection, tangent);
+
+          pathSegment.ray.direction = glm::normalize(tangent * xs + bitangent * ys + perfectReflection * zs);
+        }
       }
       else {
-        thrust::uniform_real_distribution<float> u01(0, 1);
-        float xi1 = u01(rng);
-        float xi2 = u01(rng);
-
-        float cosTheta = pow(xi1, 1 / (m.specular.exponent + 1));
-        float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
-        float phi = 2 * PI * xi2;
-
-        float xs = cos(phi) * sinTheta;
-        float ys = sin(phi) * sinTheta;
-        float zs = cosTheta;
-
-        glm::vec3 perfectReflection = glm::normalize(glm::reflect(pathSegment.ray.direction, normal));
-        
-        glm::vec3 up = glm::vec3(1.0f, 0.0f, 0.0f);
-        if (abs(perfectReflection.z) < 0.999f) {
-          up = glm::vec3(0.0f, 0.0f, 1.0f);
-        } 
-
-        glm::vec3 tangent = glm::normalize(glm::cross(up, perfectReflection));
-        glm::vec3 bitangent = glm::cross(perfectReflection, tangent);
-
-        pathSegment.ray.direction = glm::normalize(tangent * xs + bitangent * ys + perfectReflection * zs);
+        pathSegment.color *= (m.color / 1.0f - m.hasReflective);
+        pathSegment.ray.direction = calculateRandomDirectionInHemisphere(normal, rng);
       }
     } else if (m.hasRefractive > 0.0f) {
       // TODO: add refrative, rn default to pure diffuse material
@@ -108,6 +117,4 @@ __host__ __device__ void scatterRay(
       pathSegment.ray.direction = calculateRandomDirectionInHemisphere(normal, rng);
       pathSegment.ray.origin = intersect + (normal * 0.0001f);
     }
-      
-  
 }
