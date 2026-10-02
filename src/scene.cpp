@@ -42,7 +42,8 @@ void Scene::loadFromJSON(const std::string& jsonName)
         const auto& name = item.key();
         const auto& p = item.value();
         Material newMaterial{};
-        // TODO: handle materials loading differently
+
+        // handle materials loading differently
         if (p["TYPE"] == "Diffuse")
         {
             const auto& col = p["RGB"];
@@ -56,8 +57,32 @@ void Scene::loadFromJSON(const std::string& jsonName)
         }
         else if (p["TYPE"] == "Specular")
         {
+          const auto& col = p["RGB"];
+          newMaterial.color = glm::vec3(col[0], col[1], col[2]);
+          newMaterial.hasReflective = 1.0f;
+
+          if (p.contains("SPEC_RGB")) {
+            const auto& specCol = p["SPEC_RGB"];
+            newMaterial.specular.color = glm::vec3(specCol[0], specCol[1], specCol[2]);
+          }
+          else {
+            newMaterial.specular.color = newMaterial.color;
+          }
+
+          float roughness = p["ROUGHNESS"];
+          if (roughness == 0.0f) {
+            newMaterial.specular.exponent = -1.0f;
+          }
+          else {
+            newMaterial.specular.exponent = (2.0f / (roughness * roughness)) - 2.0f;
+          }
+
+        }
+        else if (p["TYPE"] == "Refractive") {
             const auto& col = p["RGB"];
             newMaterial.color = glm::vec3(col[0], col[1], col[2]);
+            newMaterial.hasRefractive = 1.0f;
+            newMaterial.indexOfRefraction = p["IOR"];
         }
         MatNameToID[name] = materials.size();
         materials.emplace_back(newMaterial);
