@@ -173,6 +173,20 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
             - cam.up * cam.pixelLength.y * ((float)y + jitterY - (float)cam.resolution.y * 0.5f)
         );
 
+        // thin lens depth of field
+        if (cam.lensRadius > 0.0f) {
+          glm::vec3 focalPoint = cam.position + (segment.ray.direction * cam.focalDistance);
+
+          thrust::uniform_real_distribution<float> u01(0.0f, 1.0f);
+          float r = cam.lensRadius * sqrt(u01(rng));
+          float theta = 2.0f * PI * u01(rng);
+
+          glm::vec3 lensOffset = cam.right * (r * cos(theta)) + cam.up * (r * sin(theta));
+
+          segment.ray.origin = cam.position + lensOffset;
+          segment.ray.direction = glm::normalize(focalPoint - segment.ray.origin);
+        }
+
         segment.pixelIndex = index;
         segment.remainingBounces = traceDepth;
     }

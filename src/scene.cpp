@@ -52,6 +52,10 @@ void Scene::loadFromJSON(const std::string& jsonName)
         newMaterial.color = glm::vec3(col[0], col[1], col[2]);
         newMaterial.indexOfRefraction = 1.5f;
 
+        if (p.contains("IOR")) {
+          newMaterial.indexOfRefraction = p["IOR"];
+        }
+
         // handle materials loading differently
         if (p["TYPE"] == "Diffuse")
         {
@@ -71,7 +75,6 @@ void Scene::loadFromJSON(const std::string& jsonName)
             newMaterial.metallic = 0.0f;
             newMaterial.roughness = 0.0f;
             newMaterial.transmission = 1.0f;
-            newMaterial.indexOfRefraction = p["IOR"];
         }
         MatNameToID[name] = materials.size();
         materials.emplace_back(newMaterial);
@@ -118,6 +121,15 @@ void Scene::loadFromJSON(const std::string& jsonName)
     camera.position = glm::vec3(pos[0], pos[1], pos[2]);
     camera.lookAt = glm::vec3(lookat[0], lookat[1], lookat[2]);
     camera.up = glm::vec3(up[0], up[1], up[2]);
+    camera.lensRadius = 0.0f;
+    camera.focalDistance = 0.0f;
+
+    if (cameraData.contains("LENSRADIUS")) {
+      camera.lensRadius = cameraData["LENSRADIUS"];
+    }
+    if (cameraData.contains("FOCALDIST")) {
+      camera.focalDistance = cameraData["FOCALDIST"];
+    }
 
     //calculate fov based on resolution
     float yscaled = tan(fovy * (PI / 180));
