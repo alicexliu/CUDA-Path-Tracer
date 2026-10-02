@@ -279,7 +279,7 @@ __global__ void shadeFakeMaterial(
             glm::vec3 materialColor = material.color;
 
             // If the material indicates that the object was a light, "light" the ray
-            if (material.emittance > 0.0f) {
+            if (glm::length(material.emittance) > 0.0f) {
                 pathSegments[idx].color *= (materialColor * material.emittance);
             }
             // Otherwise, do some pseudo-lighting computation. This is actually more

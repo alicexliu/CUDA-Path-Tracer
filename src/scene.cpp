@@ -24,6 +24,11 @@ Scene::Scene(string filename)
         loadFromJSON(filename);
         return;
     }
+    else if (ext == ".gltf")
+    {
+        loadFromGLTF(filename);
+        return;
+    }
     else
     {
         cout << "Couldn't read from " << filename << endl;
@@ -43,50 +48,29 @@ void Scene::loadFromJSON(const std::string& jsonName)
         const auto& p = item.value();
         Material newMaterial{};
 
+        const auto& col = p["RGB"];
+        newMaterial.color = glm::vec3(col[0], col[1], col[2]);
+        newMaterial.indexOfRefraction = 1.5f;
+
         // handle materials loading differently
         if (p["TYPE"] == "Diffuse")
         {
-            const auto& col = p["RGB"];
-            newMaterial.color = glm::vec3(col[0], col[1], col[2]);
+          newMaterial.metallic = 0.0f;
+          newMaterial.roughness = 1.0f;
         }
         else if (p["TYPE"] == "Emitting")
         {
-            const auto& col = p["RGB"];
-            newMaterial.color = glm::vec3(col[0], col[1], col[2]);
-            newMaterial.emittance = p["EMITTANCE"];
+            newMaterial.emittance = newMaterial.color * (float)p["EMITTANCE"];
         }
         else if (p["TYPE"] == "Specular")
         {
-            const auto& col = p["RGB"];
-            newMaterial.color = glm::vec3(col[0], col[1], col[2]);
-
-            if (p.contains("REFLECTIVITY")) {
-              newMaterial.hasReflective = p["REFLECTIVITY"];
-            }
-            else {
-              newMaterial.hasReflective = 1.0f;
-            }
-
-            if (p.contains("SPEC_RGB")) {
-              const auto& specCol = p["SPEC_RGB"];
-              newMaterial.specular.color = glm::vec3(specCol[0], specCol[1], specCol[2]);
-            }
-            else {
-              newMaterial.specular.color = newMaterial.color;
-            }
-
-            float roughness = p["ROUGHNESS"];
-            if (roughness == 0.0f) {
-              newMaterial.specular.exponent = -1.0f;
-            }
-            else {
-              newMaterial.specular.exponent = (2.0f / (roughness * roughness)) - 2.0f;
-            }
+            newMaterial.metallic = 1.0f;
+            newMaterial.roughness = p["ROUGHNESS"];
         }
         else if (p["TYPE"] == "Refractive") {
-            const auto& col = p["RGB"];
-            newMaterial.color = glm::vec3(col[0], col[1], col[2]);
-            newMaterial.hasRefractive = 1.0f;
+            newMaterial.metallic = 0.0f;
+            newMaterial.roughness = 0.0f;
+            newMaterial.transmission = 1.0f;
             newMaterial.indexOfRefraction = p["IOR"];
         }
         MatNameToID[name] = materials.size();
@@ -151,4 +135,8 @@ void Scene::loadFromJSON(const std::string& jsonName)
     int arraylen = camera.resolution.x * camera.resolution.y;
     state.image.resize(arraylen);
     std::fill(state.image.begin(), state.image.end(), glm::vec3());
+}
+
+void Scene::loadFromGLTF(const std::string& gltfName) {
+  return;
 }
