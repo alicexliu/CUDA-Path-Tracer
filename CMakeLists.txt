@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(cis565_path_tracer LANGUAGES CUDA CXX)
+project(cis565_path_tracer LANGUAGES CUDA C CXX)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -69,6 +69,7 @@ set(sources
     src/interactions.cu
     src/scene.cpp
     src/utilities.cpp
+    src/tiny_gltf_v3.c
 )
 
 set(imgui_headers
@@ -105,7 +106,7 @@ source_group("ImGui\\Sources" FILES ${imgui_sources})
 
 # add_subdirectory(src/ImGui)
 add_subdirectory(stream_compaction)
-
+add_compile_definitions(TINYGLTF3_ENABLE_FS)
 add_executable(${CMAKE_PROJECT_NAME} ${sources} ${headers} ${imgui_sources} ${imgui_headers})
 target_link_libraries(${CMAKE_PROJECT_NAME}
     ${GL_LIBRARIES}
