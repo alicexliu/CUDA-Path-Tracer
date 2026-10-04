@@ -7,6 +7,13 @@
 #include <string>
 #include <vector>
 
+#define STREAM_COMPACTION 1
+#define MATERIAL_SORTING 0
+#define BOUNDING_BOX 1
+
+#define BVH 1
+#define MAX_BVH_DEPTH 64
+
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 
 enum GeomType
@@ -22,6 +29,12 @@ struct Ray
     glm::vec3 direction;
 };
 
+struct Bounds
+{
+  glm::vec3 minBound;
+  glm::vec3 maxBound;
+};
+
 struct Geom
 {
     enum GeomType type;
@@ -34,16 +47,28 @@ struct Geom
     glm::mat4 invTranspose;
 
     // mesh variables
-    int triangleOffset;
     int numTriangles;
-    glm::vec3 minBound;
-    glm::vec3 maxBound;
+    Bounds bounds;
+
+    int bvhRootIndex;
 };
 
 struct Triangle
 {
     glm::vec3 vertices[3];
     glm::vec3 normals[3];
+    int materialid;
+};
+
+struct LinearBVHNode {
+  Bounds bounds;
+  union {
+    int primitivesOffset;   // leaf
+    int secondChildOffset;  // interior
+  };
+  uint16_t nPrimitives;     // 0 = interior
+  uint8_t axis;
+  uint8_t pad[1];           // padding for 32 bytes
 };
 
 struct Material

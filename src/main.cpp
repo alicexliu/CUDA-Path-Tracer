@@ -291,7 +291,6 @@ void RenderImGui()
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
 }
 
 bool MouseOverImGuiWindow()

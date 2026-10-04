@@ -18,6 +18,138 @@
 using namespace std;
 using json = nlohmann::json;
 
+namespace {
+  struct BVHPrimitiveInfo {
+    int primitiveNumber;
+    glm::vec3 centroid;
+    glm::vec3 minBound;
+    glm::vec3 maxBound;
+
+    BVHPrimitiveInfo(int pn, glm::vec3 minB, glm::vec3 maxB)
+      : primitiveNumber(pn), minBound(minB), maxBound(maxB) {
+      centroid = 0.5f * (minBound + maxBound);
+    }
+  };
+
+  struct BVHBuildNode {
+    glm::vec3 minBound;
+    glm::vec3 maxBound;
+    BVHBuildNode* children[2];
+    int splitAxis;
+    int firstPrimOffset;
+    int nPrimitives;
+
+    void InitLeaf(int first, int n, glm::vec3 minB, glm::vec3 maxB) {
+      firstPrimOffset = first;
+      nPrimitives = n;
+      minBound = minB; maxBound = maxB;
+      children[0] = children[1] = nullptr;
+    }
+
+    void InitInterior(int axis, BVHBuildNode* c0, BVHBuildNode* c1) {
+      children[0] = c0;
+      children[1] = c1;
+      minBound = glm::min(c0->minBound, c1->minBound);
+      maxBound = glm::max(c0->maxBound, c1->maxBound);
+      splitAxis = axis;
+      nPrimitives = 0;
+    }
+  };
+
+  std::vector<BVHPrimitiveInfo> createBVHPrimitiveInfo(const std::vector<Triangle>& triangles) {
+    std::vector<BVHPrimitiveInfo> primitiveInfo;
+    primitiveInfo.reserve(triangles.size());
+
+    for (int i = 0; i < triangles.size(); i++) {
+      const Triangle& tri = triangles[i];
+
+      glm::vec3 minBound = glm::min(tri.vertices[0], glm::min(tri.vertices[1], tri.vertices[2]));
+      glm::vec3 maxBound = glm::max(tri.vertices[0], glm::max(tri.vertices[1], tri.vertices[2]));
+
+      primitiveInfo.emplace_back(i, minBound, maxBound);
+    }
+
+    return primitiveInfo;
+  }
+
+  BVHBuildNode* buildRecursive(std::vector<BVHPrimitiveInfo>& primitiveInfo, int start, int end, int* totalNodes, int currDepth) {
+    BVHBuildNode* node = new BVHBuildNode();
+    (*totalNodes)++;
+
+    glm::vec3 geomMin(FLT_MAX), geomMax(-FLT_MAX);
+    glm::vec3 centroidMin(FLT_MAX), centroidMax(-FLT_MAX);
+
+    for (int i = start; i < end; ++i) {
+      geomMin = glm::min(geomMin, primitiveInfo[i].minBound);
+      geomMax = glm::max(geomMax, primitiveInfo[i].maxBound);
+
+      centroidMin = glm::min(centroidMin, primitiveInfo[i].centroid);
+      centroidMax = glm::max(centroidMax, primitiveInfo[i].centroid);
+    }
+
+    int nPrimitives = end - start;
+
+    // base case
+    if (nPrimitives <= 4 || centroidMin == centroidMax || currDepth >= MAX_BVH_DEPTH) {
+      node->InitLeaf(start, nPrimitives, geomMin, geomMax);
+      return node;
+    }
+
+    glm::vec3 extent = centroidMax - centroidMin;
+    int dim = 0;
+    if (extent.y > extent.x && extent.y > extent.z) dim = 1;
+    else if (extent.z > extent.x && extent.z > extent.y) dim = 2;
+
+    int mid = (start + end) / 2;
+
+    std::nth_element(&primitiveInfo[start], &primitiveInfo[mid], &primitiveInfo[end],
+      [dim](const BVHPrimitiveInfo& a, const BVHPrimitiveInfo& b) {
+        return a.centroid[dim] < b.centroid[dim];
+      });
+
+    // recurse down the left and right halves
+    node->InitInterior(dim,
+      buildRecursive(primitiveInfo, start, mid, totalNodes, currDepth),
+      buildRecursive(primitiveInfo, mid, end, totalNodes, currDepth)
+    );
+
+    return node;
+  }
+
+  int flattenBVHTree(BVHBuildNode* node, int* offset, std::vector<LinearBVHNode>& linearNodes) {
+    // DFS
+    int myOffset = *offset;
+
+    linearNodes[myOffset].bounds.minBound = node->minBound;
+    linearNodes[myOffset].bounds.maxBound = node->maxBound;
+
+    (*offset)++;
+
+    if (node->nPrimitives > 0) {
+      // leaf node
+      linearNodes[myOffset].primitivesOffset = node->firstPrimOffset;
+      linearNodes[myOffset].nPrimitives = node->nPrimitives;
+    }
+    else {
+      // internal node
+      linearNodes[myOffset].axis = node->splitAxis;
+      linearNodes[myOffset].nPrimitives = 0;
+
+      flattenBVHTree(node->children[0], offset, linearNodes);
+      linearNodes[myOffset].secondChildOffset = flattenBVHTree(node->children[1], offset, linearNodes);
+    }
+
+    return myOffset;
+  }
+
+  void deleteBVHTree(BVHBuildNode* node) {
+    if (node == nullptr) return;
+    deleteBVHTree(node->children[0]);
+    deleteBVHTree(node->children[1]);
+    delete node;
+  }
+}
+
 Scene::Scene(string filename)
 {
     cout << "Reading scene from " << filename << " ..." << endl;
@@ -143,7 +275,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
       camera.focalDistance = cameraData["FOCALDIST"];
     }
 
-    //calculate fov based on resolution
+    // calculate fov based on resolution
     float yscaled = tan(fovy * (PI / 180));
     float xscaled = (yscaled * camera.resolution.x) / camera.resolution.y;
     float fovx = (atan(xscaled) * 180) / PI;
@@ -154,10 +286,41 @@ void Scene::loadFromJSON(const std::string& jsonName)
     camera.view = glm::normalize(camera.lookAt - camera.position);
     camera.right = glm::normalize(glm::cross(camera.view, camera.up));
 
-    //set up render camera stuff
+    // set up render camera stuff
     int arraylen = camera.resolution.x * camera.resolution.y;
     state.image.resize(arraylen);
     std::fill(state.image.begin(), state.image.end(), glm::vec3());
+
+    // BVH setup
+    if (!this->triangles.empty()) {
+      std::vector<BVHPrimitiveInfo> primitiveInfo = createBVHPrimitiveInfo(this->triangles);
+
+      int totalNodes = 0;
+      BVHBuildNode* root = buildRecursive(primitiveInfo, 0, primitiveInfo.size(), &totalNodes, 0);
+
+      std::vector<LinearBVHNode> flatTree(totalNodes);
+      int offset = 0;
+      flattenBVHTree(root, &offset, flatTree);
+      deleteBVHTree(root);
+
+      std::vector<Triangle> orderedTriangles;
+      orderedTriangles.reserve(this->triangles.size());
+
+      for (int i = 0; i < primitiveInfo.size(); i++) {
+        orderedTriangles.push_back(this->triangles[primitiveInfo[i].primitiveNumber]);
+      }
+
+      this->triangles = std::move(orderedTriangles);
+      
+      Geom masterMeshGeom;
+      masterMeshGeom.type = MESH;
+      masterMeshGeom.bounds = flatTree[0].bounds;
+      masterMeshGeom.numTriangles = this->triangles.size();
+      masterMeshGeom.materialid = -1;
+      
+      this->geoms.push_back(masterMeshGeom);
+      this->bvhNodes = std::move(flatTree);
+    }
 }
 
 const uint8_t* resolveGLTFData(const tg3_model* model, int accessorIndex, uint32_t& outStride) {
@@ -345,6 +508,14 @@ void Scene::traverseMesh(tg3_model* model, uint32_t meshIndex, glm::mat4 worldTr
       continue;
     }
 
+    int currentMaterialId = 0;
+    if (jsonMaterialId >= 0) {
+      currentMaterialId = jsonMaterialId;
+    }
+    else if (primitive->material >= 0) {
+      currentMaterialId = materialOffset + primitive->material;
+    }
+
     // extract triangles
     for (uint32_t i = 0; i + 2 < idxAcc->count; i += 3)
     {
@@ -384,32 +555,10 @@ void Scene::traverseMesh(tg3_model* model, uint32_t meshIndex, glm::mat4 worldTr
       tri.normals[1] = n1;
       tri.normals[2] = n2;
 
+      tri.materialid = currentMaterialId;
+
       this->triangles.push_back(tri);
-
-      minBound = glm::min(minBound, glm::min(wp0, glm::min(wp1, wp2)));
-      maxBound = glm::max(maxBound,glm::max(wp0, glm::max(wp1, wp2)));
     }
-
-    Geom meshGeom;
-    meshGeom.type = MESH;
-    meshGeom.triangleOffset = startingTriangleCount;
-    meshGeom.numTriangles = (idxAcc->count / 3);
-    meshGeom.minBound = minBound;
-    meshGeom.maxBound = maxBound;
-
-
-    // map material
-    if (jsonMaterialId >= 0) {
-      meshGeom.materialid = jsonMaterialId;
-    }
-    else if (primitive->material >= 0) {
-      meshGeom.materialid = materialOffset + primitive->material;
-    }
-    else {
-      meshGeom.materialid = 0;
-    }
-
-    this->geoms.push_back(meshGeom);
   }
 }
 

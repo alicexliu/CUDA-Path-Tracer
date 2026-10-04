@@ -108,11 +108,11 @@ __host__ __device__ float sphereIntersectionTest(
     return glm::length(r.origin - intersectionPoint);
 }
 
-__host__ __device__ float boundingBoxIntersectionTest(const Geom& geom, const Ray& r) {
+__host__ __device__ float boundingBoxIntersectionTest(Bounds bound, const Ray& r) {
   glm::vec3 invDir = 1.0f / r.direction;
 
-  glm::vec3 t0 = (geom.minBound - r.origin) * invDir;
-  glm::vec3 t1 = (geom.maxBound - r.origin) * invDir;
+  glm::vec3 t0 = (bound.minBound - r.origin) * invDir;
+  glm::vec3 t1 = (bound.maxBound - r.origin) * invDir;
 
   glm::vec3 tMin = glm::min(t0, t1);
   glm::vec3 tMax = glm::max(t0, t1);
@@ -175,10 +175,12 @@ __host__ __device__ float meshIntersectionTest(
   glm::vec3& intersectionPoint,
   glm::vec3& normal,
   bool& outside,
-  Triangle* dev_triangles)
+  Triangle* dev_triangles,
+  LinearBVHNode* dev_bvhNodes,
+  int& hitMaterialId)
 {
 #if BOUNDING_BOX
-  if (!boundingBoxIntersectionTest(geom, r)) {
+  if (!boundingBoxIntersectionTest(geom.bounds, r)) {
     return -1.0f;
   }
 #endif
@@ -190,8 +192,53 @@ __host__ __device__ float meshIntersectionTest(
   glm::vec3 tmp_normal;
   bool tmp_outside;
 
+#if BVH
+  int toVisitOffset = 0, currentNodeIndex = 0;
+  int nodesToVisit[MAX_BVH_DEPTH];
+  nodesToVisit[toVisitOffset++] = 0;
+
+  while (toVisitOffset > 0) {
+    int currNodeIdx = nodesToVisit[--toVisitOffset];
+    LinearBVHNode node = dev_bvhNodes[currNodeIdx];
+
+    if (!boundingBoxIntersectionTest(node.bounds, r)) {
+      continue;
+    }
+
+    if (node.nPrimitives > 0) {
+      // intersect ray with primitives in leaf BVH node
+      for (int i = 0; i < node.nPrimitives; i++) {
+        Triangle tri = dev_triangles[node.primitivesOffset + i];
+        float t = triangleIntersectionTest(tri, r, tmp_intersect, tmp_normal, tmp_outside);
+        
+        if (t > 0.0f && t < t_min) {
+          t_min = t;
+          intersectionPoint = tmp_intersect;
+          normal = tmp_normal;
+          outside = tmp_outside;
+          hitMaterialId = tri.materialid;
+          hit = true;
+        }
+      }
+    }
+    else {
+      // put far BVH node on nodesToVisit stack, advance to near node
+      if (r.direction[node.axis] < 0.0f) {
+        nodesToVisit[toVisitOffset++] = currNodeIdx + 1;
+        nodesToVisit[toVisitOffset++] = node.secondChildOffset;
+      }
+      else {
+        nodesToVisit[toVisitOffset++] = node.secondChildOffset;
+        nodesToVisit[toVisitOffset++] = currNodeIdx + 1;
+      }
+    }
+  }
+
+  return hit ? t_min : -1.0f;
+#endif
+
   for (int i = 0; i < geom.numTriangles; i++) {
-    Triangle tri = dev_triangles[geom.triangleOffset + i];
+    Triangle tri = dev_triangles[i];
 
     float t = triangleIntersectionTest(tri, r, tmp_intersect, tmp_normal, tmp_outside);
 
@@ -200,6 +247,7 @@ __host__ __device__ float meshIntersectionTest(
       intersectionPoint = tmp_intersect;
       normal = tmp_normal;
       outside = tmp_outside;
+      hitMaterialId = tri.materialid;
       hit = true;
     }
   }

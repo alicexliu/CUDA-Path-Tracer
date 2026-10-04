@@ -17,9 +17,6 @@
 #include "interactions.h"
 
 #define ERRORCHECK 0
-#define STREAM_COMPACTION 1
-#define MATERIAL_SORTING 0
-#define BOUNDING_BOX 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -87,6 +84,7 @@ static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 static Triangle* dev_triangles = NULL;
+static LinearBVHNode* dev_bvhNodes = NULL;
 
 struct is_ray_alive {
   __host__ __device__ bool operator()(const PathSegment& p) {
@@ -130,6 +128,11 @@ void pathtraceInit(Scene* scene)
     cudaMalloc(&dev_triangles, scene->triangles.size() * sizeof(Triangle));
     cudaMemcpy(dev_triangles, scene->triangles.data(), scene->triangles.size() * sizeof(Triangle), cudaMemcpyHostToDevice);
 
+    if (!scene->bvhNodes.empty()) {
+      cudaMalloc(&dev_bvhNodes, scene->bvhNodes.size() * sizeof(LinearBVHNode));
+      cudaMemcpy(dev_bvhNodes, scene->bvhNodes.data(), scene->bvhNodes.size() * sizeof(LinearBVHNode), cudaMemcpyHostToDevice);
+    }
+
     checkCUDAError("pathtraceInit");
 }
 
@@ -142,6 +145,11 @@ void pathtraceFree()
     cudaFree(dev_intersections);
     // TODO: clean up any extra device memory you created
     cudaFree(dev_triangles);
+
+    if (dev_bvhNodes != NULL) {
+      cudaFree(dev_bvhNodes);
+      dev_bvhNodes = NULL;
+    }
 
     checkCUDAError("pathtraceFree");
 }
@@ -207,7 +215,8 @@ __global__ void computeIntersections(
     Geom* geoms,
     int geoms_size,
     ShadeableIntersection* intersections,
-    Triangle* dev_triangles)
+    Triangle* dev_triangles,
+    LinearBVHNode* dev_bvhNodes)
 {
     int path_index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -224,12 +233,14 @@ __global__ void computeIntersections(
 
         glm::vec3 tmp_intersect;
         glm::vec3 tmp_normal;
+        int best_material_id = -1;
 
         // naive parse through global geoms
 
         for (int i = 0; i < geoms_size; i++)
         {
             Geom& geom = geoms[i];
+            int tmp_material_id = geom.materialid;
 
             if (geom.type == CUBE)
             {
@@ -241,7 +252,8 @@ __global__ void computeIntersections(
             }
             else if (geom.type == MESH)
             {
-                t = meshIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside, dev_triangles);
+                t = meshIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside, dev_triangles, dev_bvhNodes, tmp_material_id);
+              
             }
             // TODO: add more intersection tests here... triangle? metaball? CSG?
 
@@ -253,6 +265,7 @@ __global__ void computeIntersections(
                 hit_geom_index = i;
                 intersect_point = tmp_intersect;
                 normal = tmp_normal;
+                best_material_id = tmp_material_id;
             }
         }
 
@@ -264,7 +277,7 @@ __global__ void computeIntersections(
         {
             // The ray hits something
             intersections[path_index].t = t_min;
-            intersections[path_index].materialId = geoms[hit_geom_index].materialid;
+            intersections[path_index].materialId = best_material_id;
             intersections[path_index].surfaceNormal = normal;
         }
     }
@@ -448,7 +461,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_geoms,
             hst_scene->geoms.size(),
             dev_intersections,
-            dev_triangles 
+            dev_triangles,
+            dev_bvhNodes
         );
         checkCUDAError("trace one bounce");
         cudaDeviceSynchronize();
