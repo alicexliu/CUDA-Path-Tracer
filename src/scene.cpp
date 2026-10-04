@@ -63,8 +63,8 @@ namespace {
     for (int i = 0; i < triangles.size(); i++) {
       const Triangle& tri = triangles[i];
 
-      glm::vec3 minBound = glm::min(tri.vertices[0], glm::min(tri.vertices[1], tri.vertices[2]));
-      glm::vec3 maxBound = glm::max(tri.vertices[0], glm::max(tri.vertices[1], tri.vertices[2]));
+      glm::vec3 minBound = glm::min(tri.vertices[0], glm::min(tri.vertices[1], tri.vertices[2])) - glm::vec3(0.001f);
+      glm::vec3 maxBound = glm::max(tri.vertices[0], glm::max(tri.vertices[1], tri.vertices[2])) + glm::vec3(0.001f);
 
       primitiveInfo.emplace_back(i, minBound, maxBound);
     }

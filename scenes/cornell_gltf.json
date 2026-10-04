@@ -38,9 +38,7 @@
         "FILE":"cornell",
         "EYE":[0.0,5.0,10.5],
         "LOOKAT":[0.0,5.0,0.0],
-        "UP":[0.0,1.0,0.0],
-        "LENSRADIUS": 0.5,
-        "FOCALDIST": 13.0
+        "UP":[0.0,1.0,0.0]
     },
     "Objects":
     [
@@ -89,7 +87,7 @@
         {
             "TYPE":"mesh",
             "FILE": "../../meshes/duck.glb",
-            "MATERIAL":"diffuse_white",
+            "MATERIAL":"refractive_white",
             "TRANS":[-1.0,1.0,-1.0],
             "ROTAT":[0.0,0.0,0.0],
             "SCALE":[3.0,3.0,3.0]
